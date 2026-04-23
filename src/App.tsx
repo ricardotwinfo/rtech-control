@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { 
   Plus, 
   Search, 
@@ -51,7 +52,9 @@ import {
   LabelList
 } from 'recharts';
 import * as FinanceService from './lib/finance-service';
+import { Api } from './lib/api';
 import { ExportService } from './lib/export-service';
+import { supabase } from './lib/supabase';
 import type { 
   SaaSExpense, 
   Status, 
@@ -86,6 +89,11 @@ const COMPANIES: Company[] = FinanceService.COMPANIES;
 const COST_CENTERS = ['Lifters', 'BPX', 'Acesse'];
 const STATUS_OPTIONS: Status[] = ['A VENCER', 'PAGO', 'FREE', 'ERRO', 'VENCIDO'];
 const CURRENCIES: Currency[] = ['BRL', 'USD'];
+const createEmptyAppState = (): AppState => ({
+  LIFTERS: { expenses: [], availableYears: [] },
+  BPX: { expenses: [], availableYears: [] },
+  ACESSE: { expenses: [], availableYears: [] },
+});
 
 const formatDate = (dateStr: string) => {
   if (!dateStr) return '-';
@@ -190,11 +198,7 @@ const generateFullYearData = (year: string, company: Company): SaaSExpense[] => 
 
 export default function App() {
   // --- State ---
-  const [appState, setAppState] = useState<AppState>({
-    LIFTERS: { expenses: [], availableYears: ['2025', '2026'] },
-    BPX: { expenses: [], availableYears: ['2025', '2026'] },
-    ACESSE: { expenses: [], availableYears: ['2025', '2026'] },
-  });
+  const [appState, setAppState] = useState<AppState>(createEmptyAppState);
   const [activeCompany, setActiveCompany] = useState<Company>('LIFTERS');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
@@ -206,7 +210,7 @@ export default function App() {
   const [recurringTargetMonth, setRecurringTargetMonth] = useState('');
   const [recurringTargetYear, setRecurringTargetYear] = useState('');
   const [newYearInput, setNewYearInput] = useState('');
-  const [confirmConfig, setConfirmConfig] = useState<{ title: string, message: string, onConfirm: () => void } | null>(null);
+  const [confirmConfig, setConfirmConfig] = useState<{ title: string, message: string, onConfirm: () => void | Promise<void> } | null>(null);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [editingExpense, setEditingExpense] = useState<SaaSExpense | null>(null);
   const [payingExpense, setPayingExpense] = useState<SaaSExpense | null>(null);
@@ -220,6 +224,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'settings'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isSyncingData, setIsSyncingData] = useState(true);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   
   const quickPayInputRef = useRef<HTMLInputElement>(null);
 
@@ -277,91 +288,107 @@ export default function App() {
   const expenses = activeData.expenses;
   const availableYears = activeData.availableYears;
 
-  // Load data & Migration
-  useEffect(() => {
-    const savedV3 = localStorage.getItem(STORAGE_KEY_V3);
-    const savedV2 = localStorage.getItem('saas_expenses_data_v2');
-    
-    if (savedV3) {
-      setAppState(JSON.parse(savedV3));
-    } else if (savedV2) {
-      // Migrate from V2 to V3
-      const v2Data = JSON.parse(savedV2) as SaaSExpense[];
-      const newState: AppState = {
-        LIFTERS: { expenses: [], availableYears: ['2025', '2026'] },
-        BPX: { expenses: [], availableYears: ['2025', '2026'] },
-        ACESSE: { expenses: [], availableYears: ['2025', '2026'] },
-      };
-
-      v2Data.forEach(exp => {
-        if (newState[exp.company]) {
-          // Ensure isRecurring is set for migrated data
-          const migratedExp = {
-            ...exp,
-            isRecurring: exp.isRecurring !== undefined ? exp.isRecurring : true
-          };
-          newState[exp.company].expenses.push(migratedExp);
-          const year = exp.dueDate.substring(0, 4);
-          if (!newState[exp.company].availableYears.includes(year)) {
-            newState[exp.company].availableYears.push(year);
-            newState[exp.company].availableYears.sort();
-          }
-        }
-      });
-      setAppState(newState);
-      localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(newState));
-      // Optionally remove old key
-      // localStorage.removeItem('saas_expenses_data_v2');
-    } else {
-      // Initial setup
-      const newState: AppState = {
-        LIFTERS: { expenses: generateFullYearData('2026', 'LIFTERS'), availableYears: ['2025', '2026'] },
-        BPX: { expenses: generateFullYearData('2026', 'BPX'), availableYears: ['2025', '2026'] },
-        ACESSE: { expenses: generateFullYearData('2026', 'ACESSE'), availableYears: ['2025', '2026'] },
-      };
-      setAppState(newState);
-      localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(newState));
-    }
-    
+  const applyAppState = (nextState: AppState) => {
+    setAppState(nextState);
     setIsLoaded(true);
-    
+
+    const companyYears = nextState[activeCompany]?.availableYears ?? [];
+    const currentYear = new Date().getFullYear().toString();
+    const fallbackYear = companyYears.includes(currentYear) ? currentYear : companyYears[companyYears.length - 1] || currentYear;
+
+    setFilterYear((prev) => (prev === 'TODOS' || companyYears.includes(prev) ? prev : fallbackYear));
+    setDashboardYear((prev) => (prev === 'TODOS' || companyYears.includes(prev) ? prev : fallbackYear));
+  };
+
+  const getAccessToken = async () => {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.access_token) {
+      throw new Error('Sua sessão expirou. Faça login novamente.');
+    }
+    return data.session.access_token;
+  };
+
+  const refreshAppState = async (sessionOverride?: Session | null) => {
+    const activeSession = sessionOverride ?? session;
+    if (!activeSession) {
+      setAppState(createEmptyAppState());
+      setIsLoaded(false);
+      return;
+    }
+
+    setIsSyncingData(true);
+    try {
+      await Api.syncProfile(activeSession.access_token);
+      const { appState: nextState } = await Api.fetchBootstrap(activeSession.access_token);
+      applyAppState(nextState);
+      setAuthError('');
+    } catch (error) {
+      console.error('Erro ao sincronizar dados:', error);
+      const message = error instanceof Error ? error.message : 'Não foi possível carregar os dados.';
+      setAuthError(message);
+      showToast(message, 'error');
+    } finally {
+      setIsSyncingData(false);
+    }
+  };
+
+  // Load auth state and bootstrap data
+  useEffect(() => {
+    localStorage.removeItem(STORAGE_KEY_V3);
+    localStorage.removeItem('saas_expenses_data_v2');
+
     const savedCompany = localStorage.getItem('active_company');
     if (savedCompany && COMPANIES.includes(savedCompany as Company)) {
       setActiveCompany(savedCompany as Company);
     }
-  }, []);
 
-  // Save data
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(appState));
-    }
-  }, [appState, isLoaded]);
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setIsAuthReady(true);
+      if (data.session) {
+        refreshAppState(data.session);
+      } else {
+        setIsSyncingData(false);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setIsAuthReady(true);
+      if (nextSession) {
+        refreshAppState(nextSession);
+      } else {
+        setAppState(createEmptyAppState());
+        setIsLoaded(false);
+        setIsSyncingData(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('active_company', activeCompany);
   }, [activeCompany]);
 
-  // State update helpers
-  const updateActiveExpenses = (updater: (prev: SaaSExpense[]) => SaaSExpense[]) => {
-    setAppState(prev => ({
-      ...prev,
-      [activeCompany]: {
-        ...prev[activeCompany],
-        expenses: updater(prev[activeCompany].expenses)
-      }
-    }));
-  };
+  useEffect(() => {
+    const companyYears = appState[activeCompany]?.availableYears ?? [];
+    if (companyYears.length === 0) return;
 
-  const updateActiveYears = (updater: (prev: string[]) => string[]) => {
-    setAppState(prev => ({
-      ...prev,
-      [activeCompany]: {
-        ...prev[activeCompany],
-        availableYears: updater(prev[activeCompany].availableYears)
-      }
-    }));
-  };
+    const fallbackYear = companyYears.includes(new Date().getFullYear().toString())
+      ? new Date().getFullYear().toString()
+      : companyYears[companyYears.length - 1];
+
+    if (filterYear !== 'TODOS' && !companyYears.includes(filterYear)) {
+      setFilterYear(fallbackYear);
+    }
+
+    if (dashboardYear !== 'TODOS' && !companyYears.includes(dashboardYear)) {
+      setDashboardYear(fallbackYear);
+    }
+  }, [activeCompany, appState, dashboardYear, filterYear]);
 
   // Derived Data
   const filteredExpenses = useMemo(() => {
@@ -629,15 +656,14 @@ export default function App() {
   };
 
   // Handlers
-  const handleSaveExpense = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveExpense = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
     const numericValue = parseFloat(modalValue.replace(/\./g, '').replace(',', '.'));
     const numericExchangeRate = modalExchangeRate ? parseFloat(modalExchangeRate) : undefined;
-    
-    const newExpense: SaaSExpense = {
-      id: editingExpense?.id || generateId(),
+
+    const payload = {
       company: activeCompany,
       service: formData.get('service') as string,
       dueDate: formData.get('dueDate') as string,
@@ -652,17 +678,26 @@ export default function App() {
       isRecurring: formData.get('isRecurring') === 'on',
     };
 
-    if (editingExpense) {
-      updateActiveExpenses(prev => prev.map(exp => exp.id === editingExpense.id ? newExpense : exp));
-    } else {
-      updateActiveExpenses(prev => [...prev, newExpense]);
-    }
+    try {
+      const accessToken = await getAccessToken();
+      if (editingExpense) {
+        await Api.updateExpense(accessToken, editingExpense.id, payload);
+        showToast('Lançamento atualizado com sucesso!');
+      } else {
+        await Api.createExpense(accessToken, payload);
+        showToast('Lançamento criado com sucesso!');
+      }
 
-    setIsModalOpen(false);
-    setEditingExpense(null);
+      await refreshAppState();
+      setIsModalOpen(false);
+      setEditingExpense(null);
+    } catch (error) {
+      console.error('Erro ao salvar lançamento:', error);
+      showToast(error instanceof Error ? error.message : 'Erro ao salvar lançamento.', 'error');
+    }
   };
 
-  const handleQuickPay = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleQuickPay = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!payingExpense) return;
 
@@ -670,27 +705,39 @@ export default function App() {
     const numericValue = parseFloat(modalValue.replace(/\./g, '').replace(',', '.'));
     const numericExchangeRate = modalExchangeRate ? parseFloat(modalExchangeRate) : payingExpense.exchangeRate;
 
-    const updatedExpense: SaaSExpense = {
-      ...payingExpense,
-      status: 'PAGO',
-      paymentDate: formData.get('paymentDate') as string,
-      value: isNaN(numericValue) ? payingExpense.value : numericValue,
-      exchangeRate: numericExchangeRate,
-      notes: (payingExpense.notes ? payingExpense.notes + ' | ' : '') + (formData.get('notes') as string),
-    };
+    try {
+      const accessToken = await getAccessToken();
+      await Api.payExpense(accessToken, payingExpense.id, {
+        paymentDate: formData.get('paymentDate') as string,
+        value: isNaN(numericValue) ? payingExpense.value : numericValue,
+        exchangeRate: numericExchangeRate,
+        notes: formData.get('notes') as string,
+      });
 
-    updateActiveExpenses(prev => prev.map(exp => exp.id === payingExpense.id ? updatedExpense : exp));
-    setIsPayModalOpen(false);
-    setPayingExpense(null);
+      await refreshAppState();
+      setIsPayModalOpen(false);
+      setPayingExpense(null);
+      showToast('Pagamento confirmado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao confirmar pagamento:', error);
+      showToast(error instanceof Error ? error.message : 'Erro ao confirmar pagamento.', 'error');
+    }
   };
 
   const handleDelete = (id: string) => {
     showConfirm(
       'Excluir Lançamento',
       'Tem certeza que deseja excluir este lançamento?',
-      () => {
-        updateActiveExpenses(prev => prev.filter(exp => exp.id !== id));
-        showToast('Lançamento excluído.');
+      async () => {
+        try {
+          const accessToken = await getAccessToken();
+          await Api.deleteExpense(accessToken, id);
+          await refreshAppState();
+          showToast('Lançamento excluído.');
+        } catch (error) {
+          console.error('Erro ao excluir lançamento:', error);
+          showToast(error instanceof Error ? error.message : 'Erro ao excluir lançamento.', 'error');
+        }
       }
     );
   };
@@ -700,95 +747,37 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+  const showConfirm = (title: string, message: string, onConfirm: () => void | Promise<void>) => {
     setConfirmConfig({ title, message, onConfirm });
     setIsConfirmModalOpen(true);
   };
 
-  const handleGenerateRecurring = () => {
+  const handleGenerateRecurring = async () => {
     if (!recurringTargetMonth || !recurringTargetYear) {
       showToast("Selecione o mês e ano de destino.", "error");
       return;
     }
 
-    const targetMonthFullStr = `${recurringTargetYear}-${recurringTargetMonth}`;
-    
-    // Get unique recurring services based on service name and company
-    const recurringMap = new Map<string, SaaSExpense>();
-    
-    // Sort expenses by date descending to get the most recent one first
-    const sortedForTemplate = [...expenses].sort((a, b) => b.dueDate.localeCompare(a.dueDate));
-    
-    sortedForTemplate.forEach(e => {
-      if (e.isRecurring) {
-        const serviceKey = e.service.trim().toLowerCase();
-        if (!recurringMap.has(serviceKey)) {
-          recurringMap.set(serviceKey, e);
-        }
-      }
-    });
-    
-    let recurringTools = Array.from(recurringMap.values());
-    
-    // If no recurring tools found in history, try to use INITIAL_TEMPLATES for this company
-    if (recurringTools.length === 0) {
-      const templates = INITIAL_TEMPLATES[activeCompany] || [];
-      if (templates.length > 0) {
-        recurringTools = templates.map(t => ({
-          ...t,
-          id: generateId(),
-          company: activeCompany,
-          isRecurring: true,
-          status: 'A VENCER',
-          notes: '',
-          dueDate: t.dueDate || `${new Date().getFullYear()}-01-01`,
-        } as SaaSExpense));
-      }
-    }
-    
-    if (recurringTools.length === 0) {
-      showToast(`Não foram encontrados serviços recorrentes para ${activeCompany}.`, "error");
-      return;
-    }
+    try {
+      const accessToken = await getAccessToken();
+      const { generated, appState: nextState } = await Api.generateRecurring(accessToken, activeCompany, recurringTargetMonth, recurringTargetYear);
 
-    // Filter out tools that already have a record in the target month
-    const toolsToGenerate = recurringTools.filter(tool => {
-      const toolServiceLower = tool.service.trim().toLowerCase();
-      const alreadyExists = expenses.some(e => 
-        e.service.trim().toLowerCase() === toolServiceLower && 
-        e.dueDate.startsWith(targetMonthFullStr)
-      );
-      return !alreadyExists;
-    });
-    
-    if (toolsToGenerate.length === 0) {
-      showToast(`Todos os lançamentos recorrentes para ${recurringTargetMonth}/${recurringTargetYear} já existem.`, "success");
+      applyAppState(nextState);
+      setFilterYear(recurringTargetYear);
+      setFilterMonth(recurringTargetMonth);
+      setActiveTab('expenses');
       setIsRecurringModalOpen(false);
-      return;
+
+      if (generated === 0) {
+        showToast(`Todos os lançamentos recorrentes para ${recurringTargetMonth}/${recurringTargetYear} já existem.`, 'success');
+        return;
+      }
+
+      showToast(`${generated} lançamentos gerados para ${recurringTargetMonth}/${recurringTargetYear}.`);
+    } catch (error) {
+      console.error('Erro ao gerar recorrentes:', error);
+      showToast(error instanceof Error ? error.message : 'Erro ao gerar recorrentes.', 'error');
     }
-
-    const newExpenses = toolsToGenerate.map(tool => {
-      const day = tool.dueDate.split('-')[2] || '01';
-      
-      return {
-        ...tool,
-        id: generateId(),
-        dueDate: `${targetMonthFullStr}-${day}`,
-        paymentDate: undefined,
-        exchangeRate: undefined,
-        status: 'A VENCER' as Status,
-      };
-    });
-
-    updateActiveExpenses(prev => [...prev, ...newExpenses]);
-    
-    // Update filters to show the generated data
-    setFilterYear(recurringTargetYear);
-    setFilterMonth(recurringTargetMonth);
-    setActiveTab('expenses');
-    setIsRecurringModalOpen(false);
-    
-    showToast(`${newExpenses.length} lançamentos gerados para ${recurringTargetMonth}/${recurringTargetYear}.`);
   };
 
   const openRecurringModal = () => {
@@ -804,54 +793,40 @@ export default function App() {
     setIsRecurringModalOpen(true);
   };
 
-  const handleCleanupDuplicates = () => {
-    const seen = new Map<string, SaaSExpense>();
-    const duplicatesRemoved: string[] = [];
-    
-    // Sort expenses so we prefer keeping PAGO items or items with values
-    const sortedExpenses = [...expenses].sort((a, b) => {
-      if (a.status === 'PAGO' && b.status !== 'PAGO') return -1;
-      if (a.status !== 'PAGO' && b.status === 'PAGO') return 1;
-      if (a.value > 0 && b.value === 0) return -1;
-      if (a.value === 0 && b.value > 0) return 1;
-      return 0;
-    });
+  const handleCleanupDuplicates = async () => {
+    try {
+      const accessToken = await getAccessToken();
+      const { removed, appState: nextState } = await Api.cleanupDuplicates(accessToken, activeCompany);
+      applyAppState(nextState);
 
-    const cleaned = sortedExpenses.filter(e => {
-      if (e.company !== activeCompany) return true;
-      
-      const monthKey = e.dueDate.substring(0, 7); // YYYY-MM
-      const key = `${e.company}-${e.service}-${monthKey}`;
-      
-      if (seen.has(key)) {
-        duplicatesRemoved.push(e.service);
-        return false;
+      if (removed === 0) {
+        showToast("Nenhum lançamento duplicado encontrado.", "success");
+        return;
       }
-      
-      seen.set(key, e);
-      return true;
-    });
 
-    if (duplicatesRemoved.length === 0) {
-      showToast("Nenhum lançamento duplicado encontrado.", "success");
-      return;
+      showToast(`${removed} lançamentos duplicados foram removidos.`);
+    } catch (error) {
+      console.error('Erro ao limpar duplicados:', error);
+      showToast(error instanceof Error ? error.message : 'Erro ao limpar duplicados.', 'error');
     }
-
-    updateActiveExpenses(() => cleaned);
-    showToast(`${duplicatesRemoved.length} lançamentos duplicados foram removidos.`);
   };
 
   const handleResetData = () => {
     showConfirm(
       'Resetar Dados',
       'Isso irá apagar todos os seus dados atuais e carregar a lista padrão de serviços para todo o ano de 2026. Deseja continuar?',
-      () => {
-        const data2026 = generateFullYearData('2026', activeCompany);
-        updateActiveExpenses(() => data2026);
-        updateActiveYears(() => ['2025', '2026']);
-        setFilterYear('2026');
-        setFilterMonth(new Date().toISOString().substring(5, 7));
-        showToast('Dados resetados com sucesso!');
+      async () => {
+        try {
+          const accessToken = await getAccessToken();
+          const { appState: nextState } = await Api.resetCompany(accessToken, activeCompany);
+          applyAppState(nextState);
+          setFilterYear('2026');
+          setFilterMonth(new Date().toISOString().substring(5, 7));
+          showToast('Dados resetados com sucesso!');
+        } catch (error) {
+          console.error('Erro ao resetar dados:', error);
+          showToast(error instanceof Error ? error.message : 'Erro ao resetar dados.', 'error');
+        }
       }
     );
   };
@@ -933,14 +908,21 @@ export default function App() {
     }
   };
 
-  const handleAddYear = () => {
+  const handleAddYear = async () => {
     if (newYearInput && /^\d{4}$/.test(newYearInput)) {
       if (!availableYears.includes(newYearInput)) {
-        updateActiveYears(prev => [...prev, newYearInput].sort());
-        setFilterYear(newYearInput);
-        showToast(`Ano ${newYearInput} adicionado.`);
-        setNewYearInput('');
-        setIsYearModalOpen(false);
+        try {
+          const accessToken = await getAccessToken();
+          const { appState: nextState } = await Api.addCompanyYear(accessToken, activeCompany, newYearInput);
+          applyAppState(nextState);
+          setFilterYear(newYearInput);
+          setNewYearInput('');
+          setIsYearModalOpen(false);
+          showToast(`Ano ${newYearInput} adicionado.`);
+        } catch (error) {
+          console.error('Erro ao adicionar ano:', error);
+          showToast(error instanceof Error ? error.message : 'Erro ao adicionar ano.', 'error');
+        }
       } else {
         showToast('Este ano já existe.', 'error');
       }
@@ -953,6 +935,50 @@ export default function App() {
     if (value === 'TODOS') return 'Todos os Meses';
     return months.find(m => m.value === value)?.label || '';
   };
+
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsAuthenticating(true);
+    setAuthError('');
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail,
+      password: authPassword,
+    });
+
+    if (error) {
+      setAuthError(error.message);
+      setIsAuthenticating(false);
+      return;
+    }
+
+    setAuthPassword('');
+    setIsAuthenticating(false);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setAuthPassword('');
+    setAuthEmail('');
+  };
+
+  if (!isAuthReady || isSyncingData) {
+    return <LoadingScreen message={!isAuthReady ? 'Validando sessão...' : 'Sincronizando dados com o Supabase...'} />;
+  }
+
+  if (!session) {
+    return (
+      <LoginScreen
+        email={authEmail}
+        password={authPassword}
+        error={authError}
+        isSubmitting={isAuthenticating}
+        onSubmit={handleLogin}
+        onEmailChange={setAuthEmail}
+        onPasswordChange={setAuthPassword}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex">
@@ -1030,13 +1056,6 @@ export default function App() {
 
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
-              <button className="relative p-2 text-slate-400 hover:text-slate-600 transition-colors">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
-              </button>
-              
-              <div className="h-8 w-[1px] bg-slate-200 mx-2"></div>
-
               {/* Company Selector Dropdown */}
               <div className="relative">
                 <button
@@ -1076,6 +1095,19 @@ export default function App() {
                   </>
                 )}
               </div>
+
+              <div className="hidden lg:flex flex-col text-right">
+                <p className="text-xs font-semibold text-slate-800">{session.user.email}</p>
+                <p className="text-[10px] font-medium text-slate-400">Usuário autenticado</p>
+              </div>
+
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Sair</span>
+              </button>
             </div>
           </div>
         </header>
@@ -2494,6 +2526,94 @@ export default function App() {
 function SortIcon({ isSorted, direction }: { isSorted: boolean, direction: 'asc' | 'desc' }) {
   if (!isSorted) return <ArrowUpDown className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />;
   return direction === 'asc' ? <ChevronUp className="w-3 h-3 text-blue-600" /> : <ChevronDown className="w-3 h-3 text-blue-600" />;
+}
+
+function LoadingScreen({ message }: { message: string }) {
+  return (
+    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-10 text-center shadow-2xl">
+        <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600">
+          <RefreshCw className="h-6 w-6 animate-spin text-white" />
+        </div>
+        <p className="text-xs font-bold uppercase tracking-[0.35em] text-blue-200">Rtech Control</p>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight">Preparando o ambiente</h1>
+        <p className="mt-3 text-sm text-slate-300">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({
+  email,
+  password,
+  error,
+  isSubmitting,
+  onSubmit,
+  onEmailChange,
+  onPasswordChange,
+}: {
+  email: string;
+  password: string;
+  error: string;
+  isSubmitting: boolean;
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+}) {
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1e293b,_#020617_60%)] text-white">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-6 py-12 lg:flex-row lg:items-center">
+        <div className="max-w-xl">
+          <p className="text-xs font-bold uppercase tracking-[0.4em] text-blue-200">Supabase + Prisma</p>
+          <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">Controle financeiro corporativo com persistência centralizada.</h1>
+          <p className="mt-5 text-base text-slate-300">
+            Faça login com um usuário já cadastrado no Supabase para acessar os lançamentos, relatórios e automações agora persistidos no banco.
+          </p>
+        </div>
+
+        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/10 p-8 shadow-2xl backdrop-blur">
+          <p className="text-sm font-semibold text-blue-100">Entrar no sistema</p>
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-200">E-mail</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => onEmailChange(e.target.value)}
+                required
+                className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
+                placeholder="voce@empresa.com"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-200">Senha</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => onPasswordChange(e.target.value)}
+                required
+                className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
+                placeholder="Sua senha"
+              />
+            </div>
+            {error && (
+              <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {error}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+              <span>{isSubmitting ? 'Entrando...' : 'Entrar'}</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function CompanyLogo({ company, size = 'md' }: { company: Company; size?: 'sm' | 'md' | 'lg' }) {
