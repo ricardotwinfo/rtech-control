@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getAuthUserFromAuthorizationHeader, type AuthUser } from './auth-service';
+import type { AuthUser } from './auth-service';
 
 export type VercelLikeRequest = IncomingMessage & {
   body?: any;
@@ -64,6 +64,7 @@ export function getQueryParam(value: string | string[] | undefined): string | un
 }
 
 export async function requireAuth(req: VercelLikeRequest): Promise<AuthUser> {
+  const { getAuthUserFromAuthorizationHeader } = await import('./auth-service');
   return getAuthUserFromAuthorizationHeader(req.headers.authorization ?? null);
 }
 

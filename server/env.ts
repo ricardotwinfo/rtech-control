@@ -1,10 +1,4 @@
-const requiredServerEnv = [
-  'DATABASE_URL',
-  'DIRECT_URL',
-  'SUPABASE_URL',
-  'SUPABASE_ANON_KEY',
-  'SUPABASE_SERVICE_ROLE_KEY',
-] as const;
+const requiredServerEnv = ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'] as const;
 
 type RequiredServerEnv = (typeof requiredServerEnv)[number];
 
@@ -18,9 +12,9 @@ const readEnv = (key: RequiredServerEnv) => {
 
 export const serverEnv = {
   databaseUrl: readEnv('DATABASE_URL'),
-  directUrl: readEnv('DIRECT_URL'),
+  directUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
   supabaseUrl: readEnv('SUPABASE_URL'),
-  supabaseAnonKey: readEnv('SUPABASE_ANON_KEY'),
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   supabaseServiceRoleKey: readEnv('SUPABASE_SERVICE_ROLE_KEY'),
   port: Number(process.env.PORT || 4000),
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
