@@ -1345,7 +1345,7 @@ export default function App() {
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Valores em BRL</span>
             </div>
             <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" debounce={50}>
                 <BarChart data={chartData.monthlyData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
@@ -1388,7 +1388,7 @@ export default function App() {
               <h3 className="text-lg font-bold text-slate-800">Distribuição Status</h3>
             </div>
             <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" debounce={50}>
                 <PieChart>
                   <Pie
                     data={chartData.statusData}
