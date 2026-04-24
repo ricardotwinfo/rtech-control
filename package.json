@@ -8,7 +8,7 @@
     "dev:client": "vite --port=3000 --host=0.0.0.0",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
-    "vercel-build": "prisma generate && vite build",
+    "vercel-build": "prisma generate && node scripts/build-server.mjs && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
