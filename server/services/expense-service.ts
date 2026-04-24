@@ -202,20 +202,41 @@ export async function deleteExpense(id: string) {
   await prisma.expense.delete({ where: { id } });
 }
 
-export async function payExpense(id: string, paymentDate: string, value?: number, exchangeRate?: number, notes?: string, userId?: string) {
-  const current = await prisma.expense.findUniqueOrThrow({ where: { id } });
+export async function payExpense(
+  id: string,
+  paymentDate: string,
+  value?: number,
+  exchangeRate?: number,
+  notes?: string,
+  userId?: string,
+  existingNotes?: string,
+) {
+  // Skip the pre-fetch when the caller already provides existingNotes and explicit values.
+  let baseNotes: string | null | undefined = existingNotes;
+  let baseValue: number | Prisma.Decimal | undefined = value;
+  let baseExchangeRate: number | Prisma.Decimal | null | undefined = exchangeRate ?? null;
+  let baseUserId: string | null | undefined = userId;
+
+  if (baseNotes === undefined || baseValue === undefined) {
+    const current = await prisma.expense.findUniqueOrThrow({ where: { id } });
+    baseNotes = baseNotes ?? current.notes;
+    baseValue = baseValue ?? current.value;
+    baseExchangeRate = baseExchangeRate ?? current.exchangeRate;
+    baseUserId = baseUserId ?? current.updatedByUserId;
+  }
+
   const noteValue = notes?.trim();
-  const combinedNotes = noteValue ? [current.notes, noteValue].filter(Boolean).join(' | ') : current.notes;
+  const combinedNotes = noteValue ? [baseNotes, noteValue].filter(Boolean).join(' | ') : baseNotes;
 
   const updated = await prisma.expense.update({
     where: { id },
     data: {
       status: ExpenseStatus.PAGO,
       paymentDate: toDate(paymentDate),
-      value: value ?? current.value,
-      exchangeRate: exchangeRate ?? current.exchangeRate,
-      notes: combinedNotes,
-      updatedByUserId: userId ?? current.updatedByUserId,
+      value: baseValue,
+      exchangeRate: baseExchangeRate,
+      notes: combinedNotes ?? '',
+      updatedByUserId: baseUserId,
     },
   });
 

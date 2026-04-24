@@ -64,7 +64,7 @@ export const Api = {
   payExpense: (
     accessToken: string,
     id: string,
-    payload: { paymentDate: string; value?: number; exchangeRate?: number; notes?: string },
+    payload: { paymentDate: string; value?: number; exchangeRate?: number; notes?: string; existingNotes?: string },
   ) =>
     request<{ expense: SaaSExpense }>(`/api/expenses/${id}/pay`, accessToken, {
       method: 'POST',

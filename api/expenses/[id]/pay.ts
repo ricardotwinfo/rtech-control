@@ -23,9 +23,10 @@ export default async function handler(req: any, res: any) {
       value?: number;
       exchangeRate?: number;
       notes?: string;
+      existingNotes?: string;
     }>(req);
 
-    const expense = await payExpense(id, body.paymentDate, body.value, body.exchangeRate, body.notes, authUser.id);
+    const expense = await payExpense(id, body.paymentDate, body.value, body.exchangeRate, body.notes, authUser.id, body.existingNotes);
     response.status(200).json({ expense });
   } catch (error) {
     handleApiError(response, error);

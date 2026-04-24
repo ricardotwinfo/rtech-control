@@ -54,6 +54,10 @@ model Expense {
   updatedByUserId String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  @@index([company])
+  @@index([company, dueDate])
+  @@index([status])
 }
 
 model CompanyYear {

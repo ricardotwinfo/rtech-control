@@ -410,7 +410,7 @@ export default function App() {
     return data.session.access_token;
   };
 
-  const refreshAppState = async (sessionOverride?: Session | null) => {
+  const refreshAppState = async (sessionOverride?: Session | null, opts: { syncProfile?: boolean } = {}) => {
     const activeSession = sessionOverride ?? session;
     if (!activeSession) {
       setAppState(createEmptyAppState());
@@ -420,9 +420,17 @@ export default function App() {
 
     setIsSyncingData(true);
     try {
-      await Api.syncProfile(activeSession.access_token);
-      const { appState: nextState } = await Api.fetchBootstrap(activeSession.access_token);
-      applyAppState(nextState);
+      if (opts.syncProfile) {
+        // Run both in parallel on first login — saves one serial round trip
+        const [, { appState: nextState }] = await Promise.all([
+          Api.syncProfile(activeSession.access_token),
+          Api.fetchBootstrap(activeSession.access_token),
+        ]);
+        applyAppState(nextState);
+      } else {
+        const { appState: nextState } = await Api.fetchBootstrap(activeSession.access_token);
+        applyAppState(nextState);
+      }
       setAuthError('');
     } catch (error) {
       console.error('Erro ao sincronizar dados:', error);
@@ -448,7 +456,7 @@ export default function App() {
       setSession(data.session);
       setIsAuthReady(true);
       if (data.session) {
-        refreshAppState(data.session);
+        refreshAppState(data.session, { syncProfile: true });
       } else {
         setIsSyncingData(false);
       }
@@ -797,14 +805,38 @@ export default function App() {
     try {
       const accessToken = await getAccessToken();
       if (editingExpense) {
-        await Api.updateExpense(accessToken, editingExpense.id, payload);
+        const { expense: updated } = await Api.updateExpense(accessToken, editingExpense.id, payload);
+        setAppState(prev => {
+          const year = updated.dueDate.slice(0, 4);
+          const co = prev[activeCompany];
+          return {
+            ...prev,
+            [activeCompany]: {
+              expenses: co.expenses.map(e => e.id === editingExpense.id ? updated : e),
+              availableYears: co.availableYears.includes(year) ? co.availableYears : [...co.availableYears, year].sort(),
+            },
+          };
+        });
         showToast('Lançamento atualizado com sucesso!');
       } else {
-        await Api.createExpense(accessToken, payload);
+        const { expense: created } = await Api.createExpense(accessToken, payload);
+        setAppState(prev => {
+          const year = created.dueDate.slice(0, 4);
+          const co = prev[activeCompany];
+          const expenses = [...co.expenses, created].sort(
+            (a, b) => a.dueDate.localeCompare(b.dueDate) || a.service.localeCompare(b.service),
+          );
+          return {
+            ...prev,
+            [activeCompany]: {
+              expenses,
+              availableYears: co.availableYears.includes(year) ? co.availableYears : [...co.availableYears, year].sort(),
+            },
+          };
+        });
         showToast('Lançamento criado com sucesso!');
       }
 
-      await refreshAppState();
       setIsModalOpen(false);
       setEditingExpense(null);
     } catch (error) {
@@ -823,14 +855,21 @@ export default function App() {
 
     try {
       const accessToken = await getAccessToken();
-      await Api.payExpense(accessToken, payingExpense.id, {
+      const { expense: updated } = await Api.payExpense(accessToken, payingExpense.id, {
         paymentDate: formData.get('paymentDate') as string,
         value: isNaN(numericValue) ? payingExpense.value : numericValue,
         exchangeRate: numericExchangeRate,
         notes: formData.get('notes') as string,
+        existingNotes: payingExpense.notes,
       });
 
-      await refreshAppState();
+      setAppState(prev => ({
+        ...prev,
+        [activeCompany]: {
+          ...prev[activeCompany],
+          expenses: prev[activeCompany].expenses.map(e => e.id === payingExpense.id ? updated : e),
+        },
+      }));
       setIsPayModalOpen(false);
       setPayingExpense(null);
       showToast('Pagamento confirmado com sucesso!');
@@ -848,7 +887,13 @@ export default function App() {
         try {
           const accessToken = await getAccessToken();
           await Api.deleteExpense(accessToken, id);
-          await refreshAppState();
+          setAppState(prev => ({
+            ...prev,
+            [activeCompany]: {
+              ...prev[activeCompany],
+              expenses: prev[activeCompany].expenses.filter(e => e.id !== id),
+            },
+          }));
           showToast('Lançamento excluído.');
         } catch (error) {
           console.error('Erro ao excluir lançamento:', error);
@@ -1034,8 +1079,17 @@ export default function App() {
       if (!availableYears.includes(newYearInput)) {
         try {
           const accessToken = await getAccessToken();
-          const { appState: nextState } = await Api.addCompanyYear(accessToken, activeCompany, newYearInput);
-          applyAppState(nextState);
+          await Api.addCompanyYear(accessToken, activeCompany, newYearInput);
+          setAppState(prev => {
+            const co = prev[activeCompany];
+            return {
+              ...prev,
+              [activeCompany]: {
+                ...co,
+                availableYears: [...co.availableYears, newYearInput].sort(),
+              },
+            };
+          });
           setFilterYear(newYearInput);
           setNewYearInput('');
           setIsYearModalOpen(false);
