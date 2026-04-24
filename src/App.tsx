@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { 
   Plus, 
@@ -194,6 +194,108 @@ const generateFullYearData = (year: string, company: Company): SaaSExpense[] => 
   return fullData;
 };
 
+// --- Toast System ---
+
+type ToastItem = { id: string; message: string; type: 'success' | 'error'; duration: number };
+
+function ToastNotification({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
+  const [paused, setPaused] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startTimeRef = useRef(Date.now());
+  const remainingRef = useRef(toast.duration);
+
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+    timeoutRef.current = setTimeout(() => onDismiss(toast.id), remainingRef.current);
+    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
+  }, []);
+
+  const handleMouseEnter = () => {
+    setPaused(true);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startTimeRef.current));
+  };
+
+  const handleMouseLeave = () => {
+    setPaused(false);
+    startTimeRef.current = Date.now();
+    timeoutRef.current = setTimeout(() => onDismiss(toast.id), remainingRef.current);
+  };
+
+  const isSuccess = toast.type === 'success';
+
+  return (
+    <motion.div
+      role={isSuccess ? 'status' : 'alert'}
+      layout
+      initial={{ opacity: 0, x: 60, scale: 0.95 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 60, scale: 0.95, transition: { duration: 0.2 } }}
+      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`relative flex items-start gap-3 w-[340px] rounded-xl shadow-2xl border overflow-hidden cursor-default select-none ${
+        isSuccess
+          ? 'bg-white border-emerald-100'
+          : 'bg-white border-rose-100'
+      }`}
+    >
+      {/* Colored left accent */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${isSuccess ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+
+      {/* Icon */}
+      <div className={`mt-3.5 ml-4 flex-shrink-0 p-1.5 rounded-full ${isSuccess ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+        {isSuccess
+          ? <CheckCircle className="w-4 h-4" />
+          : <AlertCircle className="w-4 h-4" />}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 py-3 pr-8 min-w-0">
+        <p className={`text-xs font-semibold uppercase tracking-wider mb-0.5 ${isSuccess ? 'text-emerald-700' : 'text-rose-700'}`}>
+          {isSuccess ? 'Sucesso' : 'Erro'}
+        </p>
+        <p className="text-sm text-slate-700 leading-snug break-words">{toast.message}</p>
+      </div>
+
+      {/* Close button */}
+      <button
+        onClick={() => onDismiss(toast.id)}
+        className="absolute top-2.5 right-2.5 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+        aria-label="Fechar notificação"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+
+      {/* Progress bar */}
+      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-slate-100">
+        <div
+          className={`h-full ${isSuccess ? 'bg-emerald-400' : 'bg-rose-400'}`}
+          style={{
+            animation: `toast-progress ${toast.duration}ms linear forwards`,
+            animationPlayState: paused ? 'paused' : 'running',
+          }}
+        />
+      </div>
+    </motion.div>
+  );
+}
+
+function ToastContainer({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: string) => void }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed top-5 right-5 z-[200] flex flex-col gap-3 items-end pointer-events-none">
+      <AnimatePresence mode="sync">
+        {toasts.map(t => (
+          <div key={t.id} className="pointer-events-auto">
+            <ToastNotification toast={t} onDismiss={onDismiss} />
+          </div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // --- Components ---
 
 export default function App() {
@@ -211,7 +313,7 @@ export default function App() {
   const [recurringTargetYear, setRecurringTargetYear] = useState('');
   const [newYearInput, setNewYearInput] = useState('');
   const [confirmConfig, setConfirmConfig] = useState<{ title: string, message: string, onConfirm: () => void | Promise<void> } | null>(null);
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [editingExpense, setEditingExpense] = useState<SaaSExpense | null>(null);
   const [payingExpense, setPayingExpense] = useState<SaaSExpense | null>(null);
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
@@ -742,10 +844,15 @@ export default function App() {
     );
   };
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const duration = type === 'error' ? 6000 : 3500;
+    setToasts(prev => [...prev, { id, message, type, duration }]);
+  }, []);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void | Promise<void>) => {
     setConfirmConfig({ title, message, onConfirm });
@@ -1995,24 +2102,8 @@ export default function App() {
   </main>
 </div>
 
-      {/* Toast Notification */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border ${
-              toast.type === 'success' 
-                ? 'bg-emerald-600 border-emerald-500 text-white' 
-                : 'bg-rose-600 border-rose-500 text-white'
-            }`}
-          >
-            {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-            <span className="font-medium">{toast.message}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Toast Container */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
         {/* Year Modal */}
         <AnimatePresence>
