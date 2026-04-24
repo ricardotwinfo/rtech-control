@@ -364,7 +364,7 @@ export async function generateRecurringExpenses(company: CompanyType, targetMont
         paymentDate: null,
         service: item.service,
         currency: item.currency as Currency,
-        value: item.value,
+        value: 0,
         exchangeRate: null,
         status: ExpenseStatus.A_VENCER,
         cardLast4: item.cardLast4,
