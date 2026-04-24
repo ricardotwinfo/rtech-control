@@ -2115,7 +2115,11 @@ export default function App() {
                         onChange={(e) => setRecurringTargetYear(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none font-bold"
                       >
-                        {availableYears.map(y => (
+                        {Array.from(new Set([
+                          ...availableYears,
+                          new Date().getFullYear().toString(),
+                          (new Date().getFullYear() + 1).toString()
+                        ])).sort().map(y => (
                           <option key={y} value={y}>{y}</option>
                         ))}
                       </select>

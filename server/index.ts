@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import 'express-async-errors';
 import { createApp } from './app';
 import { serverEnv } from './env';
 

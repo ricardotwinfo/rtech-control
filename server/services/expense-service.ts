@@ -1,7 +1,7 @@
 import { Company, Currency, ExpenseStatus, Prisma } from '@prisma/client';
 import type { AppState, Company as CompanyType, CompanyState, Currency as CurrencyType, SaaSExpense, Status } from '../../src/lib/finance-service';
 import { COMPANIES } from '../../src/lib/finance-service';
-import { DEFAULT_AVAILABLE_YEARS, generateFullYearSeedData } from '../../src/lib/expense-templates';
+import { DEFAULT_AVAILABLE_YEARS, generateFullYearSeedData, INITIAL_TEMPLATES } from '../../src/lib/expense-templates';
 import { prisma } from '../prisma';
 
 type ExpensePayload = {
@@ -310,7 +310,29 @@ export async function generateRecurringExpenses(company: CompanyType, targetMont
     }
   });
 
-  const recurringItems = Array.from(recurringMap.values());
+  let recurringItems = Array.from(recurringMap.values());
+
+  if (recurringItems.length === 0) {
+    const templates = INITIAL_TEMPLATES[company];
+    if (templates && templates.length > 0) {
+      recurringItems = templates.map((t, index) => ({
+        id: `template-${index}`,
+        company: company as CompanyType,
+        dueDate: t.dueDate || '2026-01-01',
+        paymentDate: undefined,
+        service: t.service || '',
+        currency: (t.currency || 'BRL') as CurrencyType,
+        value: t.value || 0,
+        exchangeRate: undefined,
+        status: 'A VENCER' as Status,
+        cardLast4: t.cardLast4 || '',
+        notes: '',
+        costCenter: t.costCenter || '',
+        isRecurring: true,
+      }));
+    }
+  }
+
   const newExpenses = recurringItems
     .filter((item) => !expenses.some((expense) => expense.service.trim().toLowerCase() === item.service.trim().toLowerCase() && expense.dueDate.startsWith(targetMonthPrefix)))
     .map((item) => {
