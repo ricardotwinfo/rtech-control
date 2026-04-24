@@ -2,7 +2,7 @@
   "buildCommand": "npm run vercel-build",
   "functions": {
     "api/**/*.ts": {
-      "includeFiles": "{prisma/schema.prisma,server/**/*.js,src/lib/finance-service.js,src/lib/expense-templates.js}"
+      "includeFiles": "prisma/schema.prisma"
     }
   }
 }
