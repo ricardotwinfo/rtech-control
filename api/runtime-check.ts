@@ -1,4 +1,4 @@
-import { ensureResponseHelpers } from '../server/vercel-api';
+import { ensureResponseHelpers } from '../server/vercel-api.js';
 
 const toMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -17,21 +17,21 @@ export default async function handler(_req: any, res: any) {
   };
 
   try {
-    await import('../server/env');
+    await import('../server/env.js');
     diagnostics.serverEnvImport = 'ok';
   } catch (error) {
     diagnostics.serverEnvImport = `error: ${toMessage(error)}`;
   }
 
   try {
-    await import('../server/prisma');
+    await import('../server/prisma.js');
     diagnostics.prismaImport = 'ok';
   } catch (error) {
     diagnostics.prismaImport = `error: ${toMessage(error)}`;
   }
 
   try {
-    const { getBootstrapState } = await import('../server/services/expense-service');
+    const { getBootstrapState } = await import('../server/services/expense-service.js');
     diagnostics.expenseServiceImport = 'ok';
 
     try {

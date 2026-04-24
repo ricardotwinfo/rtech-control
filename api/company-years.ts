@@ -1,5 +1,5 @@
-import { addCompanyYear, getBootstrapState } from '../server/services/expense-service';
-import { ensureResponseHelpers, handleApiError, readJsonBody, requireAuth } from '../server/vercel-api';
+import { addCompanyYear, getBootstrapState } from '../server/services/expense-service.js';
+import { ensureResponseHelpers, handleApiError, readJsonBody, requireAuth } from '../server/vercel-api.js';
 
 export default async function handler(req: any, res: any) {
   const response = ensureResponseHelpers(res);

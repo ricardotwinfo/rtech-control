@@ -1,8 +1,8 @@
 import { Company, Currency, ExpenseStatus, Prisma } from '@prisma/client';
-import type { AppState, Company as CompanyType, CompanyState, Currency as CurrencyType, SaaSExpense, Status } from '../../src/lib/finance-service';
-import { COMPANIES } from '../../src/lib/finance-service';
-import { DEFAULT_AVAILABLE_YEARS, generateFullYearSeedData, INITIAL_TEMPLATES } from '../../src/lib/expense-templates';
-import { prisma } from '../prisma';
+import type { AppState, Company as CompanyType, CompanyState, Currency as CurrencyType, SaaSExpense, Status } from '../../src/lib/finance-service.js';
+import { COMPANIES } from '../../src/lib/finance-service.js';
+import { DEFAULT_AVAILABLE_YEARS, generateFullYearSeedData, INITIAL_TEMPLATES } from '../../src/lib/expense-templates.js';
+import { prisma } from '../prisma.js';
 
 type ExpensePayload = {
   company: CompanyType;

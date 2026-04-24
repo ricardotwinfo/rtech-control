@@ -1,5 +1,5 @@
-import { deleteExpense, updateExpense } from '../../server/services/expense-service';
-import { ensureResponseHelpers, getQueryParam, handleApiError, readJsonBody, requireAuth } from '../../server/vercel-api';
+import { deleteExpense, updateExpense } from '../../server/services/expense-service.js';
+import { ensureResponseHelpers, getQueryParam, handleApiError, readJsonBody, requireAuth } from '../../server/vercel-api.js';
 
 export default async function handler(req: any, res: any) {
   const response = ensureResponseHelpers(res);
