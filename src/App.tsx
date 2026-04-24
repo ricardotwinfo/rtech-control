@@ -2096,8 +2096,7 @@ export default function App() {
                               setModalStatus(expense.status);
                               setModalExchangeRate(expense.exchangeRate?.toString() || '');
                               
-                              const refDate = FinanceService.getReferenceDate(expense);
-                              setHistoricalRateDate(refDate);
+                              setHistoricalRateDate(expense.paymentDate || expense.dueDate);
                               
                               setIsModalOpen(true); 
                             }}

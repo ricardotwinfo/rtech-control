@@ -82,14 +82,12 @@ export const getEffectiveStatus = (expense: SaaSExpense, todayStr: string): Stat
 };
 
 /**
- * Gets the reference date for filtering and dashboard.
- * - For PAID items: use paymentDate if available, otherwise dueDate.
- * - For others: use dueDate.
+ * Gets the reference date for filtering and grouping.
+ * Always uses dueDate so that expenses are always assigned to the month
+ * they were due, regardless of when payment was actually made.
+ * (A payment on 02/02 for a bill due 31/01 belongs to January.)
  */
 export const getReferenceDate = (expense: SaaSExpense): string => {
-  if (expense.status === 'PAGO' && expense.paymentDate) {
-    return expense.paymentDate;
-  }
   return expense.dueDate;
 };
 
