@@ -716,7 +716,6 @@ export default function App() {
   const fetchHistoricalRate = async (date: string) => {
     if (!date) return;
 
-    // Se for a data de hoje, usamos o endpoint de cotação atual que é mais confiável
     const today = new Date().toISOString().split('T')[0];
     if (date === today) {
       return fetchExchangeRate();
@@ -724,20 +723,35 @@ export default function App() {
 
     setIsFetchingRate(true);
     try {
-      // AwesomeAPI format: YYYYMMDD
-      const formattedDate = date.replace(/-/g, '');
-      const response = await fetch(`https://economia.awesomeapi.com.br/json/daily/USD-BRL/?start_date=${formattedDate}&end_date=${formattedDate}`);
-      
+      // Query a 7-day window ending on the selected date so weekends and
+      // holidays automatically fall back to the most recent trading day.
+      const targetDate = new Date(date + 'T12:00:00');
+      const startDate = new Date(targetDate);
+      startDate.setDate(startDate.getDate() - 7);
+      const fmt = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '');
+
+      const response = await fetch(
+        `https://economia.awesomeapi.com.br/json/daily/USD-BRL/?start_date=${fmt(startDate)}&end_date=${fmt(targetDate)}`
+      );
+
       if (!response.ok) throw new Error('API Error');
-      
+
       const data = await response.json();
-      
+
       if (Array.isArray(data) && data.length > 0) {
-        // bid is usually the closing/current rate in daily
-        setModalExchangeRate(parseFloat(data[0].bid).toFixed(4));
-        showToast(`Cotação de ${formatDate(date)} aplicada!`);
+        const entry = data[0]; // API returns newest first
+        setModalExchangeRate(parseFloat(entry.bid).toFixed(4));
+
+        const actualDate = new Date(parseInt(entry.timestamp) * 1000)
+          .toISOString().split('T')[0];
+
+        if (actualDate === date) {
+          showToast(`Cotação de ${formatDate(date)} aplicada!`);
+        } else {
+          showToast(`Fechamento de ${formatDate(actualDate)} aplicado (${formatDate(date)} sem negociações).`);
+        }
       } else {
-        showToast('Cotação não encontrada para esta data (provavelmente fim de semana ou feriado).', 'error');
+        showToast('Cotação não encontrada para o período selecionado.', 'error');
       }
     } catch (error) {
       console.error('Erro ao buscar cotação histórica:', error);
