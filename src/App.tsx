@@ -323,6 +323,7 @@ export default function App() {
   const [modalStatus, setModalStatus] = useState<Status>('A VENCER');
   const [modalExchangeRate, setModalExchangeRate] = useState<string>('');
   const [modalDueDate, setModalDueDate] = useState('');
+  const [modalPaymentDate, setModalPaymentDate] = useState('');
   const [modalCostCenter, setModalCostCenter] = useState('');
   const [historicalRateDate, setHistoricalRateDate] = useState('');
   const [isFetchingRate, setIsFetchingRate] = useState(false);
@@ -1445,6 +1446,7 @@ export default function App() {
                         const y = filterYear !== 'TODOS' ? filterYear : new Date().getFullYear().toString();
                         const m = filterMonth !== 'TODOS' ? filterMonth : (new Date().getMonth() + 1).toString().padStart(2, '0');
                         setModalDueDate(`${y}-${m}-01`);
+                        setModalPaymentDate(`${y}-${m}-01`);
                         setIsModalOpen(true);
                       }}
                       className="flex items-center gap-2 bg-[#001529] hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors shadow-md text-sm font-semibold"
@@ -2122,6 +2124,7 @@ export default function App() {
                               setModalStatus(expense.status);
                               setModalExchangeRate(expense.exchangeRate?.toString() || '');
                               setModalDueDate(expense.dueDate);
+                              setModalPaymentDate(expense.paymentDate || '');
                               setModalCostCenter(expense.costCenter);
                               setHistoricalRateDate(expense.paymentDate || expense.dueDate);
                               setIsModalOpen(true);
@@ -2522,17 +2525,18 @@ export default function App() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Data de Pagamento (opcional)</label>
-                    <input 
-                      name="paymentDate" 
-                      type="date" 
-                      defaultValue={editingExpense?.paymentDate}
+                    <input
+                      name="paymentDate"
+                      type="date"
+                      value={modalPaymentDate}
                       onChange={(e) => {
+                        setModalPaymentDate(e.target.value);
                         if (modalCurrency === 'USD') {
                           setHistoricalRateDate(e.target.value);
                           fetchHistoricalRate(e.target.value);
                         }
                       }}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                 </div>
