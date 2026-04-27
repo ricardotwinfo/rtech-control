@@ -330,7 +330,8 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSyncingData, setIsSyncingData] = useState(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
-  
+  const isPasswordRecoveryRef = useRef(false);
+
   const quickPayInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -449,10 +450,18 @@ export default function App() {
       setActiveCompany(savedCompany as Company);
     }
 
+    // Detect recovery token in URL hash (implicit flow: #type=recovery)
+    const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
+    if (hashParams.get('type') === 'recovery') {
+      isPasswordRecoveryRef.current = true;
+      setIsPasswordRecovery(true);
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setIsAuthReady(true);
-      if (data.session) {
+      // Skip bootstrap when in recovery mode — user must reset password first
+      if (data.session && !isPasswordRecoveryRef.current) {
         refreshAppState(data.session, { syncProfile: true });
       } else {
         setIsSyncingData(false);
@@ -463,12 +472,19 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === 'PASSWORD_RECOVERY') {
+        // Mark recovery mode and stop — do NOT load the app
+        isPasswordRecoveryRef.current = true;
+        setIsPasswordRecovery(true);
         setSession(nextSession);
         setIsAuthReady(true);
-        setIsPasswordRecovery(true);
         setIsSyncingData(false);
         return;
       }
+
+      // Supabase v2 + PKCE fires SIGNED_IN right after PASSWORD_RECOVERY.
+      // Ignore all subsequent events until the user finishes the reset flow.
+      if (isPasswordRecoveryRef.current) return;
+
       setIsPasswordRecovery(false);
       setSession(nextSession);
       setIsAuthReady(true);
@@ -1128,9 +1144,10 @@ export default function App() {
     return (
       <ResetPasswordScreen
         onSuccess={() => {
+          isPasswordRecoveryRef.current = false;
           setIsPasswordRecovery(false);
-          supabase.auth.signOut();
           setSession(null);
+          supabase.auth.signOut();
         }}
       />
     );
