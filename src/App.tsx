@@ -324,15 +324,11 @@ export default function App() {
   const [historicalRateDate, setHistoricalRateDate] = useState('');
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'settings'>('dashboard');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
   const [isLoaded, setIsLoaded] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSyncingData, setIsSyncingData] = useState(true);
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
   
   const quickPayInputRef = useRef<HTMLInputElement>(null);
 
@@ -1111,30 +1107,8 @@ export default function App() {
     return months.find(m => m.value === value)?.label || '';
   };
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsAuthenticating(true);
-    setAuthError('');
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: authEmail,
-      password: authPassword,
-    });
-
-    if (error) {
-      setAuthError(error.message);
-      setIsAuthenticating(false);
-      return;
-    }
-
-    setAuthPassword('');
-    setIsAuthenticating(false);
-  };
-
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    setAuthPassword('');
-    setAuthEmail('');
   };
 
   if (!isAuthReady || isSyncingData) {
@@ -1142,23 +1116,21 @@ export default function App() {
   }
 
   if (!session) {
-    return (
-      <LoginScreen
-        email={authEmail}
-        password={authPassword}
-        error={authError}
-        isSubmitting={isAuthenticating}
-        onSubmit={handleLogin}
-        onEmailChange={setAuthEmail}
-        onPasswordChange={setAuthPassword}
-      />
-    );
+    return <LoginScreen />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex">
+      {/* Mobile sidebar backdrop */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className={`bg-[#001529] text-slate-300 transition-all duration-300 flex flex-col z-50 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 bg-[#001529] text-slate-300 flex flex-col transition-all duration-300 lg:relative lg:inset-auto lg:z-auto ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-64 -translate-x-full lg:translate-x-0 lg:w-20'}`}>
         <div className="p-6 flex items-center gap-3 border-b border-slate-800/50">
           <div className="bg-blue-600 p-2 rounded-lg shrink-0">
             <CreditCard className="w-6 h-6 text-white" />
@@ -1173,35 +1145,35 @@ export default function App() {
 
         <nav className="flex-1 py-6 px-3 space-y-1">
           {isSidebarOpen && <p className="text-[10px] font-bold text-slate-500 px-3 mb-2 uppercase tracking-widest">Geral</p>}
-          <SidebarItem 
-            icon={<LayoutDashboard className="w-5 h-5" />} 
-            label="Dashboard" 
-            active={activeTab === 'dashboard'} 
-            onClick={() => setActiveTab('dashboard')}
+          <SidebarItem
+            icon={<LayoutDashboard className="w-5 h-5" />}
+            label="Dashboard"
+            active={activeTab === 'dashboard'}
+            onClick={() => { setActiveTab('dashboard'); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
             collapsed={!isSidebarOpen}
           />
-          <SidebarItem 
-            icon={<Receipt className="w-5 h-5" />} 
-            label="Financeiro" 
-            active={activeTab === 'expenses'} 
-            onClick={() => setActiveTab('expenses')}
+          <SidebarItem
+            icon={<Receipt className="w-5 h-5" />}
+            label="Financeiro"
+            active={activeTab === 'expenses'}
+            onClick={() => { setActiveTab('expenses'); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
             collapsed={!isSidebarOpen}
           />
-          
+
           <div className="pt-4">
             {isSidebarOpen && <p className="text-[10px] font-bold text-slate-500 px-3 mb-2 uppercase tracking-widest">Sistema</p>}
-            <SidebarItem 
-              icon={<Settings className="w-5 h-5" />} 
-              label="Configurações" 
-              active={activeTab === 'settings'} 
-              onClick={() => setActiveTab('settings')}
+            <SidebarItem
+              icon={<Settings className="w-5 h-5" />}
+              label="Configurações"
+              active={activeTab === 'settings'}
+              onClick={() => { setActiveTab('settings'); if (window.innerWidth < 1024) setIsSidebarOpen(false); }}
               collapsed={!isSidebarOpen}
             />
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800/50">
-          <button 
+        <div className="hidden lg:block p-4 border-t border-slate-800/50">
+          <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="w-full flex items-center justify-center p-2 hover:bg-slate-800 rounded-lg transition-colors"
           >
@@ -1213,14 +1185,23 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 z-40">
-          <div className="flex items-center gap-4 flex-1 max-w-xl">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-40">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Mobile hamburger */}
+            <button
+              className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Abrir menu"
+            >
+              <Menu className="w-5 h-5 text-slate-600" />
+            </button>
+
             {activeTab !== 'dashboard' && (
-              <div className="relative w-full">
+              <div className="relative w-full max-w-xl">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <input 
-                  type="text" 
-                  placeholder="Pesquisar registros, unidades ou receita..." 
+                <input
+                  type="text"
+                  placeholder="Pesquisar..."
                   className="w-full pl-10 pr-4 py-2 bg-slate-50 border-transparent rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -1288,7 +1269,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto space-y-8">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
@@ -2705,73 +2686,224 @@ function LoadingScreen({ message }: { message: string }) {
   );
 }
 
-function LoginScreen({
-  email,
-  password,
-  error,
-  isSubmitting,
-  onSubmit,
-  onEmailChange,
-  onPasswordChange,
-}: {
-  email: string;
-  password: string;
-  error: string;
-  isSubmitting: boolean;
-  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
-  onEmailChange: (value: string) => void;
-  onPasswordChange: (value: string) => void;
-}) {
+const ALLOWED_SIGNUP_DOMAINS = ['twinfo.io', 'lifters.tech'];
+
+function LoginScreen() {
+  const [mode, setMode] = React.useState<'login' | 'signup' | 'forgot'>('login');
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [success, setSuccess] = React.useState('');
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  const switchMode = (next: 'login' | 'signup' | 'forgot') => {
+    setMode(next);
+    setError('');
+    setSuccess('');
+    setPassword('');
+    setConfirmPassword('');
+  };
+
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setError('E-mail ou senha incorretos. Verifique seus dados e tente novamente.');
+    setIsSubmitting(false);
+  };
+
+  const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError('');
+    const domain = email.split('@')[1]?.toLowerCase() ?? '';
+    if (!ALLOWED_SIGNUP_DOMAINS.includes(domain)) {
+      setError('Não foi possível realizar o cadastro.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    setIsSubmitting(true);
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) {
+      setError('Não foi possível realizar o cadastro.');
+    } else {
+      setSuccess('Cadastro realizado! Verifique seu e-mail para confirmar o acesso à plataforma.');
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+    await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    setSuccess('Se este e-mail estiver cadastrado, você receberá um link para redefinir sua senha em breve.');
+    setIsSubmitting(false);
+  };
+
+  const inputClass = 'w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3.5 text-sm text-white outline-none transition focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 placeholder:text-slate-500';
+  const labelClass = 'mb-1.5 block text-xs font-semibold text-slate-400 uppercase tracking-wider';
+
+  const formHandler = mode === 'login' ? handleLogin : mode === 'signup' ? handleSignUp : handleForgotPassword;
+
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1e293b,_#020617_60%)] text-white">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-6 py-12 lg:flex-row lg:items-center">
-        <div className="max-w-xl">
-          <p className="text-xs font-bold uppercase tracking-[0.4em] text-blue-200">Supabase + Prisma</p>
-          <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl">Controle financeiro corporativo com persistência centralizada.</h1>
-          <p className="mt-5 text-base text-slate-300">
-            Faça login com um usuário já cadastrado no Supabase para acessar os lançamentos, relatórios e automações agora persistidos no banco.
-          </p>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1e293b,_#020617_60%)] text-white flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm">
+
+        {/* Brand */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-3 mb-3">
+            <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-900/40">
+              <CreditCard className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-xl font-bold tracking-tight text-white">RTECH CONTROL</span>
+          </div>
+          <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Gestão de Pagamentos Corporativos</p>
         </div>
 
-        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/10 p-8 shadow-2xl backdrop-blur">
-          <p className="text-sm font-semibold text-blue-100">Entrar no sistema</p>
-          <form onSubmit={onSubmit} className="mt-6 space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">E-mail</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => onEmailChange(e.target.value)}
-                required
-                className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
-                placeholder="voce@empresa.com"
-              />
+        {/* Card */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur-sm">
+
+          {/* Header */}
+          <div className="mb-5">
+            <h2 className="text-base font-bold text-white">
+              {mode === 'login' && 'Entrar na plataforma'}
+              {mode === 'signup' && 'Criar sua conta'}
+              {mode === 'forgot' && 'Recuperar senha'}
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              {mode === 'login' && 'Acesse com suas credenciais corporativas.'}
+              {mode === 'signup' && 'Preencha os dados para criar seu acesso.'}
+              {mode === 'forgot' && 'Enviaremos um link de redefinição por e-mail.'}
+            </p>
+          </div>
+
+          {/* Success state */}
+          {success ? (
+            <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-100 mb-4">
+              <p className="font-semibold mb-1 flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0" /> Pronto!
+              </p>
+              <p className="text-xs leading-relaxed text-emerald-200">{success}</p>
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">Senha</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => onPasswordChange(e.target.value)}
-                required
-                className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400"
-                placeholder="Sua senha"
-              />
-            </div>
-            {error && (
-              <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-                {error}
+          ) : (
+            <form onSubmit={formHandler} className="space-y-4" noValidate>
+              {/* Email */}
+              <div>
+                <label className={labelClass}>E-mail</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  inputMode="email"
+                  className={inputClass}
+                  placeholder="voce@empresa.com"
+                />
               </div>
+
+              {/* Password */}
+              {mode !== 'forgot' && (
+                <div>
+                  <label className={labelClass}>Senha</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                    className={inputClass}
+                    placeholder={mode === 'signup' ? 'Mínimo 6 caracteres' : '••••••••'}
+                  />
+                </div>
+              )}
+
+              {/* Confirm password */}
+              {mode === 'signup' && (
+                <div>
+                  <label className={labelClass}>Confirmar Senha</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    className={inputClass}
+                    placeholder="Repita a senha"
+                  />
+                </div>
+              )}
+
+              {/* Forgot password link */}
+              {mode === 'login' && (
+                <div className="text-right -mt-1">
+                  <button
+                    type="button"
+                    onClick={() => switchMode('forgot')}
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 mt-1"
+              >
+                {isSubmitting && <RefreshCw className="h-4 w-4 animate-spin" />}
+                <span>
+                  {isSubmitting
+                    ? (mode === 'login' ? 'Entrando...' : mode === 'signup' ? 'Cadastrando...' : 'Enviando...')
+                    : (mode === 'login' ? 'Entrar' : mode === 'signup' ? 'Criar conta' : 'Enviar link de recuperação')}
+                </span>
+              </button>
+            </form>
+          )}
+
+          {/* Footer navigation */}
+          <div className="mt-5 pt-4 border-t border-white/10 text-center space-y-2">
+            {mode !== 'login' ? (
+              <button
+                type="button"
+                onClick={() => switchMode('login')}
+                className="text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                ← Voltar para o login
+              </button>
+            ) : (
+              <p className="text-sm text-slate-400">
+                Não tem uma conta?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('signup')}
+                  className="text-blue-400 hover:text-blue-300 font-semibold transition-colors"
+                >
+                  Cadastre-se
+                </button>
+              </p>
             )}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSubmitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-              <span>{isSubmitting ? 'Entrando...' : 'Entrar'}</span>
-            </button>
-          </form>
+          </div>
         </div>
       </div>
     </div>
