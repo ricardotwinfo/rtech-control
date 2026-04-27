@@ -329,6 +329,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isSyncingData, setIsSyncingData] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   
   const quickPayInputRef = useRef<HTMLInputElement>(null);
 
@@ -460,7 +461,15 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setSession(nextSession);
+        setIsAuthReady(true);
+        setIsPasswordRecovery(true);
+        setIsSyncingData(false);
+        return;
+      }
+      setIsPasswordRecovery(false);
       setSession(nextSession);
       setIsAuthReady(true);
       if (nextSession) {
@@ -1113,6 +1122,18 @@ export default function App() {
 
   if (!isAuthReady || isSyncingData) {
     return <LoadingScreen message={!isAuthReady ? 'Validando sessão...' : 'Sincronizando dados com o Supabase...'} />;
+  }
+
+  if (isPasswordRecovery) {
+    return (
+      <ResetPasswordScreen
+        onSuccess={() => {
+          setIsPasswordRecovery(false);
+          supabase.auth.signOut();
+          setSession(null);
+        }}
+      />
+    );
   }
 
   if (!session) {
@@ -2681,6 +2702,115 @@ function LoadingScreen({ message }: { message: string }) {
         <p className="text-xs font-bold uppercase tracking-[0.35em] text-blue-200">Rtech Control</p>
         <h1 className="mt-3 text-2xl font-bold tracking-tight">Preparando o ambiente</h1>
         <p className="mt-3 text-sm text-slate-300">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordScreen({ onSuccess }: { onSuccess: () => void }) {
+  const [password, setPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [success, setSuccess] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError('');
+    if (password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    setIsSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      setError('Não foi possível redefinir a senha. Solicite um novo link de recuperação.');
+    } else {
+      setSuccess(true);
+      setTimeout(onSuccess, 3000);
+    }
+    setIsSubmitting(false);
+  };
+
+  const inputClass = 'w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3.5 text-sm text-white outline-none transition focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 placeholder:text-slate-500';
+  const labelClass = 'mb-1.5 block text-xs font-semibold text-slate-400 uppercase tracking-wider';
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1e293b,_#020617_60%)] text-white flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-3 mb-3">
+            <div className="bg-blue-600 p-2.5 rounded-xl shadow-lg shadow-blue-900/40">
+              <CreditCard className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-xl font-bold tracking-tight text-white">RTECH CONTROL</span>
+          </div>
+          <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Gestão de Pagamentos Corporativos</p>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[0.07] p-6 shadow-2xl backdrop-blur-sm">
+          <div className="mb-5">
+            <h2 className="text-base font-bold text-white">Criar nova senha</h2>
+            <p className="text-xs text-slate-400 mt-1">Escolha uma senha segura para sua conta.</p>
+          </div>
+
+          {success ? (
+            <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-4 text-sm text-emerald-100">
+              <p className="font-semibold mb-1 flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0" /> Senha redefinida!
+              </p>
+              <p className="text-xs leading-relaxed text-emerald-200">
+                Sua senha foi atualizada com sucesso. Redirecionando para o login...
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+              <div>
+                <label className={labelClass}>Nova Senha</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  className={inputClass}
+                  placeholder="Mínimo 6 caracteres"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Confirmar Nova Senha</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  className={inputClass}
+                  placeholder="Repita a nova senha"
+                />
+              </div>
+              {error && (
+                <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-blue-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 mt-1"
+              >
+                {isSubmitting && <RefreshCw className="h-4 w-4 animate-spin" />}
+                <span>{isSubmitting ? 'Salvando...' : 'Salvar nova senha'}</span>
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
