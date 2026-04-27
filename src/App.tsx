@@ -87,6 +87,7 @@ const getServiceColor = (service: string) => {
 const STORAGE_KEY_V3 = 'saas_expenses_data_v3';
 const COMPANIES: Company[] = FinanceService.COMPANIES;
 const COST_CENTERS = ['Lifters', 'BPX', 'Acesse'];
+const COMPANY_COST_CENTER: Record<string, string> = { LIFTERS: 'Lifters', BPX: 'BPX', ACESSE: 'Acesse' };
 const STATUS_OPTIONS: Status[] = ['A VENCER', 'PAGO', 'FREE', 'ERRO', 'VENCIDO'];
 const CURRENCIES: Currency[] = ['BRL', 'USD'];
 const createEmptyAppState = (): AppState => ({
@@ -321,6 +322,8 @@ export default function App() {
   const [modalValue, setModalValue] = useState('');
   const [modalStatus, setModalStatus] = useState<Status>('A VENCER');
   const [modalExchangeRate, setModalExchangeRate] = useState<string>('');
+  const [modalDueDate, setModalDueDate] = useState('');
+  const [modalCostCenter, setModalCostCenter] = useState('');
   const [historicalRateDate, setHistoricalRateDate] = useState('');
   const [isFetchingRate, setIsFetchingRate] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'expenses' | 'settings'>('dashboard');
@@ -1432,13 +1435,17 @@ export default function App() {
                       <span className="hidden sm:inline">Gerar Recorrentes</span>
                     </button>
                     <button 
-                      onClick={() => { 
-                        setEditingExpense(null); 
+                      onClick={() => {
+                        setEditingExpense(null);
                         setModalCurrency('BRL');
                         setModalValue('');
                         setModalStatus('A VENCER');
                         setModalExchangeRate('');
-                        setIsModalOpen(true); 
+                        setModalCostCenter(COMPANY_COST_CENTER[activeCompany] || 'Lifters');
+                        const y = filterYear !== 'TODOS' ? filterYear : new Date().getFullYear().toString();
+                        const m = filterMonth !== 'TODOS' ? filterMonth : (new Date().getMonth() + 1).toString().padStart(2, '0');
+                        setModalDueDate(`${y}-${m}-01`);
+                        setIsModalOpen(true);
                       }}
                       className="flex items-center gap-2 bg-[#001529] hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors shadow-md text-sm font-semibold"
                     >
@@ -2107,17 +2114,17 @@ export default function App() {
                               <CheckCircle className="w-5 h-5" />
                             </button>
                           )}
-                          <button 
-                            onClick={() => { 
-                              setEditingExpense(expense); 
+                          <button
+                            onClick={() => {
+                              setEditingExpense(expense);
                               setModalCurrency(expense.currency);
                               setModalValue(expense.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                               setModalStatus(expense.status);
                               setModalExchangeRate(expense.exchangeRate?.toString() || '');
-                              
+                              setModalDueDate(expense.dueDate);
+                              setModalCostCenter(expense.costCenter);
                               setHistoricalRateDate(expense.paymentDate || expense.dueDate);
-                              
-                              setIsModalOpen(true); 
+                              setIsModalOpen(true);
                             }}
                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Editar"
@@ -2400,12 +2407,13 @@ export default function App() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Vencimento</label>
-                    <input 
-                      name="dueDate" 
-                      type="date" 
-                      required={modalStatus !== 'FREE'} 
-                      defaultValue={editingExpense?.dueDate}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                    <input
+                      name="dueDate"
+                      type="date"
+                      required={modalStatus !== 'FREE'}
+                      value={modalDueDate}
+                      onChange={e => setModalDueDate(e.target.value)}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
                   <div className="space-y-2">
@@ -2503,9 +2511,10 @@ export default function App() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Centro de Custos</label>
-                    <select 
-                      name="costCenter" 
-                      defaultValue={editingExpense?.costCenter || 'Geral'}
+                    <select
+                      name="costCenter"
+                      value={modalCostCenter}
+                      onChange={e => setModalCostCenter(e.target.value)}
                       className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                     >
                       {COST_CENTERS.map(cc => <option key={cc} value={cc}>{cc}</option>)}
